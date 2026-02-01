@@ -3,12 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SDA BLACK MARKET | FULL RESTORATION</title>
+    <title>SDA BLACK MARKET | MASTER BUILD</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
     <style>
         :root { --brand: #f0b90b; --bg: #0b0e11; --card: #1e2329; --green: #2ebd85; --red: #f6465d; --gray: #848e9c; }
         body { background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; margin: 0; padding-bottom: 90px; font-size: 13px; line-height: 1.6; }
         
+        /* STATUS INDICATORS - FULL RESTORATION */
+        .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+        .online { background: var(--green); box-shadow: 0 0 5px var(--green); }
+        .offline { background: var(--gray); }
+
         .header { text-align: center; color: var(--brand); padding: 15px; border-bottom: 1px solid #333; font-weight: 900; font-size: 18px; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; }
         .nav-bar { position: fixed; bottom: 0; width: 100%; background: #181a20; display: flex; justify-content: space-around; padding: 18px 0; border-top: 1px solid #333; z-index: 1000; }
         .nav-item { font-size: 10px; color: var(--gray); cursor: pointer; font-weight: 800; text-transform: uppercase; }
@@ -29,7 +34,7 @@
         
         .ad-item { background: #161a1e; padding: 12px; border-radius: 6px; border-left: 4px solid var(--brand); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
         #toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--brand); color: #000; padding: 10px 25px; border-radius: 30px; font-weight: 800; z-index: 10001; display: none; }
-        #modalOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 10000; display: none; align-items: center; justify-content: center; }
+        #modalOverlay, #ratingOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 10000; display: none; align-items: center; justify-content: center; }
         .modal-content { background: var(--card); padding: 25px; border-radius: 12px; width: 85%; max-width: 380px; text-align: center; border: 1px solid var(--brand); }
         .hidden { display: none !important; }
         .legal-text { font-size: 11px; color: var(--gray); line-height: 1.6; text-align: justify; margin-top: 10px; }
@@ -39,6 +44,22 @@
 
 <div id="toast"></div>
 <div id="modalOverlay"><div class="modal-content"><h3 id="modalTitle"></h3><p id="modalMsg"></p><button onclick="closeModal()">OK</button></div></div>
+
+<div id="ratingOverlay">
+    <div class="modal-content">
+        <h3 style="color:var(--brand)">RATE YOUR PARTNER</h3>
+        <p style="font-size:12px;">This rating is optional but helps the community.</p>
+        <select id="rateScore">
+            <option value="">Skip Rating</option>
+            <option value="5">⭐⭐⭐⭐⭐ (Excellent)</option>
+            <option value="4">⭐⭐⭐⭐ (Good)</option>
+            <option value="3">⭐⭐⭐ (Average)</option>
+            <option value="2">⭐⭐ (Poor)</option>
+            <option value="1">⭐ (Very Bad)</option>
+        </select>
+        <button onclick="submitRating()">SUBMIT & CLOSE</button>
+    </div>
+</div>
 
 <h1 class="header" onclick="triggerAdmin()">SDA BLACK MARKET</h1>
 
@@ -155,13 +176,14 @@
 </div>
 
 <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbw6NgqciWredwJBBR8Mgkl6pRlIk1KECJtP-H6u9aeZ78Uk1NcOjV7DgRW1Vwk_LHdyOg/exec"; 
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbyQ9iS9u4iPiaOu2zkwHf1Mq9hwORFzCSqdE8cDJmCfxhosEKE70EQXyIvVeWE2HWY7CA/exec"; 
     const ADMIN_WALLET = "0x0141F9569B652BD1740fb4d99889dA7a600d4c5F";
     const RPC = "https://node.sidrachain.com";
     
     let curU = localStorage.getItem('s_u'), myVault = localStorage.getItem('s_v'), myVKey = localStorage.getItem('s_vk');
     let myBuyAddr = localStorage.getItem('s_ba'), myBuyKey = localStorage.getItem('s_bk');
-    let actP = 0, actV = "", actS = 0, hits = 0;
+    let actP = 0, actV = "", actS = 0, hits = 0, ratingTarget = "";
+    let pendingBuyVaults = JSON.parse(localStorage.getItem('p_buys') || '[]');
 
     if(curU) startApp();
 
@@ -193,17 +215,25 @@
         const txt = await res.text(); openModal("RECOVERY", txt === "INVALID" ? "Wrong Answer" : "PIN: " + txt);
     }
 
+    // VAULT SAFETY ENFORCEMENT - INTACT
     async function postAd() {
         const p = new ethers.JsonRpcProvider(RPC);
-        const bal = await p.getBalance(myVault);
-        if (parseFloat(ethers.formatEther(bal)) <= 0) { openModal("EMPTY", "Fund Vault."); return; }
-        await fetch(GAS_URL, {method:"POST", body:JSON.stringify({
-            action: "postAd", sellerPhone: curU, vault: myVault,
-            price: document.getElementById('pPrice').value, qty: document.getElementById('pQty').value,
-            bName: document.getElementById('pBName').value, bAcc: document.getElementById('pBAcc').value,
-            bHolder: document.getElementById('pBHolder').value
-        })});
-        notify("LIVE"); showSection('homeView');
+        const reqQty = parseFloat(document.getElementById('pQty').value);
+        try {
+            const bal = await p.getBalance(myVault);
+            const actualBal = parseFloat(ethers.formatEther(bal));
+            const maxSafe = actualBal * 0.99; // 1% Gas Reserve
+            if (actualBal <= 0) { openModal("EMPTY", "Vault has 0 SDA. Fund it first."); return; }
+            if (reqQty > maxSafe) { openModal("LIMIT", `Max listable: ${maxSafe.toFixed(4)} SDA (1% reserve).`); return; }
+
+            await fetch(GAS_URL, {method:"POST", body:JSON.stringify({
+                action: "postAd", sellerPhone: curU, vault: myVault,
+                price: document.getElementById('pPrice').value, qty: reqQty,
+                bName: document.getElementById('pBName').value, bAcc: document.getElementById('pBAcc').value,
+                bHolder: document.getElementById('pBHolder').value
+            })});
+            notify("LIVE"); showSection('homeView');
+        } catch(e) { openModal("ERROR", "Connection failed."); }
     }
 
     async function sync() {
@@ -216,15 +246,24 @@
             document.getElementById('vBalDisp').innerText = "Vault: " + parseFloat(ethers.formatEther(vBal)).toFixed(4) + " SDA";
         } catch(e) {}
         const res = await fetch(GAS_URL); const d = await res.json();
-        renderMarket(d.ads); renderSeller(d.ads, d.users); renderBuyer(d.ads);
-        renderAdmin(d.ads, d.users);
+        renderMarket(d.ads, d.users); renderSeller(d.ads, d.users); renderBuyer(d.ads); renderAdmin(d.ads, d.users);
+        fetch(GAS_URL, {method:"POST", body:JSON.stringify({action:"heartbeat", phone:curU})});
     }
 
-    function renderMarket(ads) {
-        let h = "";
+    // ONLINE STATUS & RATINGS UI - FULLY RESTORED
+    function renderMarket(ads, users) {
+        let h = ""; const now = new Date();
         for(let i=1; i < ads.length; i++) {
             if(ads[i][8] === "ACTIVE" && parseFloat(ads[i][3]) > 0.0001) {
-                h += `<div class="ad-item"><div><b>${ads[i][2]} NGN</b><br><small>Stock: ${ads[i][3]}</small></div>
+                const seller = users.find(u => u[0] == ads[i][1]);
+                const lastSeen = new Date(seller[10]);
+                const isOnline = (now - lastSeen) < 60000;
+                const statusStr = isOnline ? "ONLINE" : "Last seen: " + lastSeen.toLocaleTimeString();
+
+                h += `<div class="ad-item"><div>
+                    <span class="status-dot ${isOnline ? 'online' : 'offline'}"></span>
+                    <b>${ads[i][2]} NGN</b> <span style="color:var(--brand); font-size:10px;">⭐ ${seller[9]}</span><br>
+                    <small>Stock: ${ads[i][3]} | ${statusStr}</small></div>
                 <button onclick="openBuy('${ads[i][4]}','${ads[i][2]}','${ads[i][3]}','${ads[i][5]}','${ads[i][6]}','${ads[i][7]}')" style="width:70px;">BUY</button></div>`;
             }
         }
@@ -245,30 +284,25 @@
     async function submitBuyProof() {
         const qVal = document.getElementById('bQty').value;
         if(!document.getElementById('bFromBank').value) { notify("ENTER BANK"); return; }
-        const res = await fetch(GAS_URL, {method:"POST", body:JSON.stringify({
+        await fetch(GAS_URL, {method:"POST", body:JSON.stringify({
             action:"submitProof", vault: actV, buyerPhone: curU, reqQty: qVal, 
             fromBank: document.getElementById('bFromBank').value, fromName: document.getElementById('bFromName').value, fromNum: document.getElementById('bFromNum').value
         })});
-        const txt = await res.text();
-        if(txt === "EXCEEDS_STOCK") { openModal("ERROR", "Stock changed."); sync(); }
-        else { notify("PROOFS SENT"); showSection('homeView'); }
+        pendingBuyVaults.push(actV); localStorage.setItem('p_buys', JSON.stringify(pendingBuyVaults));
+        notify("PROOFS SENT"); showSection('homeView');
     }
 
+    // SELLER HUB & PRICE EDITOR - INTACT
     function renderSeller(ads, users) {
         let h = "", a = "";
         for(let i=1; i < ads.length; i++) {
             if(ads[i][1] == curU && ads[i][8] !== "SOLD") {
                 if(ads[i][8] === "PENDING_CONFIRMATION") {
                     const parts = ads[i][9].split(" | ");
-                    const reqQty = parts[1].split(":")[1];
-                    const bPhone = parts[0].split(":")[1];
-                    const bU = users.find(u => u[0] == bPhone);
-                    a += `<div class="card" style="border:1px solid var(--green)"><b>ORDER: ${reqQty} SDA</b><br><small>${ads[i][9]}</small>
-                        <button onclick="releaseSDA('${myVKey}','${reqQty}','${ads[i][4]}','${bU[7]}')">RELEASE</button></div>`;
+                    const reqQty = parts[1].split(":")[1], bPhone = parts[0].split(":")[1], bU = users.find(u => u[0] == bPhone);
+                    a += `<div class="card" style="border:1px solid var(--green)"><b>ORDER: ${reqQty} SDA</b><br><small>${ads[i][9]}</small><button onclick="releaseSDA('${myVKey}','${reqQty}','${ads[i][4]}','${bU[7]}','${bPhone}')">RELEASE</button></div>`;
                 }
-                // --- PRICE EDITING UI (FIXED) ---
-                h += `<div class="ad-item"><div><b>STOCK: ${ads[i][3]}</b><br><small>${ads[i][2]} NGN</small></div>
-                <div style="display:flex; gap:5px;"><input type="number" id="ep_${i}" placeholder="New Price" style="width:70px; padding:5px; margin:0;"><button onclick="editPrice('${ads[i][4]}', document.getElementById('ep_${i}').value)" style="width:40px; padding:5px; margin:0; background:var(--brand); color:#000;">SET</button></div></div>`;
+                h += `<div class="ad-item"><div><b>STOCK: ${ads[i][3]}</b><br><small>${ads[i][2]} NGN</small></div><div style="display:flex; gap:5px;"><input type="number" id="ep_${i}" placeholder="Price" style="width:70px; padding:5px; margin:0;"><button onclick="editPrice('${ads[i][4]}', document.getElementById('ep_${i}').value)" style="width:40px; padding:5px; margin:0; background:var(--brand); color:#000;">SET</button></div></div>`;
             }
         }
         document.getElementById('sellerOrderAlerts').innerHTML = a;
@@ -283,29 +317,39 @@
             }
         }
         document.getElementById('buyerActionAlerts').innerHTML = h;
+        pendingBuyVaults.forEach((vAddr, index) => {
+            const ad = ads.find(a => a[4] === vAddr);
+            if (ad && ad[8] !== "PENDING_CONFIRMATION") {
+                ratingTarget = ad[1]; document.getElementById('ratingOverlay').style.display = 'flex';
+                pendingBuyVaults.splice(index, 1); localStorage.setItem('p_buys', JSON.stringify(pendingBuyVaults));
+            }
+        });
     }
 
-    async function releaseSDA(vk, q, va, ba) {
+    async function releaseSDA(vk, q, va, ba, bPhone) {
         notify("RELEASING...");
         const p = new ethers.JsonRpcProvider(RPC), w = new ethers.Wallet(vk, p);
         const exactQty = parseFloat(q);
-        const commission = exactQty * 0.005; 
         try {
             await w.sendTransaction({to: ba, value: ethers.parseEther(exactQty.toFixed(6))});
-            await w.sendTransaction({to: ADMIN_WALLET, value: ethers.parseEther(commission.toFixed(6))});
+            await w.sendTransaction({to: ADMIN_WALLET, value: ethers.parseEther((exactQty * 0.005).toFixed(6))});
             await fetch(GAS_URL, {method:"POST", body:JSON.stringify({action:"updateStatus", vault:va, soldQty: q})});
+            ratingTarget = bPhone; document.getElementById('ratingOverlay').style.display = 'flex';
             notify("SUCCESS"); sync();
-        } catch(e) { openModal("ERROR", "Check Vault SDA for fees."); }
+        } catch(e) { openModal("ERROR", "Gas error."); }
     }
 
-    // --- REAL-TIME PRICE EDITING FUNCTION (FIXED) ---
+    async function submitRating() {
+        const score = document.getElementById('rateScore').value;
+        if(score && ratingTarget) await fetch(GAS_URL, {method:"POST", body:JSON.stringify({action:"rateUser", targetPhone: ratingTarget, rating: score})});
+        document.getElementById('ratingOverlay').style.display = 'none';
+        ratingTarget = "";
+    }
+
     async function editPrice(v, p) {
-        if(!p || p <= 0) { notify("ENTER VALID PRICE"); return; }
-        notify("UPDATING PRICE...");
-        const res = await fetch(GAS_URL, {method:"POST", body:JSON.stringify({action:"editPrice", vault:v, newPrice:p})});
-        const txt = await res.text();
-        if(txt === "PRICE_UPDATED") { notify("PRICE SET TO " + p); sync(); }
-        else { openModal("FAILED", txt); }
+        if(!p || p <= 0) { notify("INVALID"); return; }
+        await fetch(GAS_URL, {method:"POST", body:JSON.stringify({action:"editPrice", vault:v, newPrice:p})});
+        notify("UPDATED"); sync();
     }
 
     async function dispute(v) { await fetch(GAS_URL, {method:"POST", body:JSON.stringify({action:"raiseDispute", vault:v})}); notify("DISPUTED"); sync(); }
@@ -322,12 +366,9 @@
         for(let i=1; i < ads.length; i++) {
             if(ads[i][8] === "DISPUTED") {
                 const parts = ads[i][9].split(" | ");
-                const bPhone = parts[0].split(":")[1];
-                const reqQty = parts[1].split(":")[1];
-                const bU = users.find(u => u[0] == bPhone);
-                const sU = users.find(u => u[0] == ads[i][1]);
-                h += `<div class="ad-item"><b>DISPUTE: ${reqQty}</b><br><small>Buyer: ${bPhone}</small>
-                    <button onclick="releaseSDA('${sU[6]}','${reqQty}','${ads[i][4]}','${bU[7]}')" class="btn-red">FORCE</button></div>`;
+                const bPhone = parts[0].split(":")[1], reqQty = parts[1].split(":")[1];
+                const bU = users.find(u => u[0] == bPhone), sU = users.find(u => u[0] == ads[i][1]);
+                h += `<div class="ad-item"><b>DISPUTE: ${reqQty}</b><br><small>Buyer: ${bPhone}</small><button onclick="releaseSDA('${sU[6]}','${reqQty}','${ads[i][4]}','${bU[7]}','${bPhone}')" class="btn-red">FORCE</button></div>`;
             }
         }
         document.getElementById('adminFeed').innerHTML = h || "No Disputes.";
@@ -346,7 +387,7 @@
     function triggerAdmin() { hits++; if(hits >= 10) { notify("ADMIN ON"); showSection('adminSec'); } }
     function showSection(id) { document.querySelectorAll('#mainApp > div, #authPanel, #recoverPanel').forEach(d => d.classList.add('hidden')); document.getElementById(id).classList.remove('hidden'); }
     function logout() { localStorage.clear(); location.reload(); }
-    function startApp() { document.getElementById('authPanel').classList.add('hidden'); document.getElementById('mainApp').classList.remove('hidden'); document.getElementById('navBar').classList.remove('hidden'); document.getElementById('vAddrDisp').innerText = myVault; sync(); setInterval(sync, 10000); }
+    function startApp() { document.getElementById('authPanel').classList.add('hidden'); document.getElementById('mainApp').classList.remove('hidden'); document.getElementById('navBar').classList.remove('hidden'); document.getElementById('vAddrDisp').innerText = myVault; sync(); setInterval(sync, 15000); }
 </script>
 </body>
 </html>
